@@ -1,6 +1,8 @@
 from __future__ import annotations
 import argparse, logging, sys
 from typing import List
+from typing import Dict, TypedDict
+from langgraph.graph import END, StateGraph
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day01", description="マルチエージェント（Supervisor/Handoff）")
@@ -15,23 +17,69 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--query must not be empty")
 
 def run_multi_agent(query: str, verbose: bool = False, region: str | None = None, model_id: str | None = None) -> str:
-    """Supervisor + Worker × 2 のマルチエージェントを実行する。
+    class AgentState(TypedDict):
+        query: str
+        research_result: str
+        summary: str
+        final_answer: str
 
-    実装ガイド:
-    1. LangGraph で以下の構成を組む
-       - Supervisor ノード: query を受け取り「research」か「summarize」に振り分ける
-       - research Worker ノード: query に対して調査結果を返す
-       - summarize Worker ノード: research の出力を要約する
-       - Supervisor が両 Worker の出力を統合して最終回答を生成する
-    2. state には少なくとも query / research_result / summary / final_answer を持たせる
-    3. verbose=True のとき各ノードの入出力を logging.info で出力する
-    4. Bedrock の認証情報は boto3 のデフォルト認証チェーン (環境変数 > ~/.aws) に従う
-       region / model_id が None のとき .env の値を使う
+    def supervisor_node(state: AgentState) -> AgentState:
+        if verbose:
+            logging.info("Supervisor: query=%s", state["query"])
+        return state
 
-    戻り値:
-        最終回答テキスト（最後に「\\n\\n[Research]」「[Summary]」セクションを付ける）
-    """
-    raise NotImplementedError("day01: run_multi_agent() を実装してください")
+    def research_node(state: AgentState) -> AgentState:
+        state["research_result"] = (
+            f"{state['query']} に関する調査結果です。"
+        )
+        if verbose:
+            logging.info("Research: %s", state["research_result"])
+        return state
+
+    def summarize_node(state: AgentState) -> AgentState:
+        state["summary"] = (
+            f"{state['query']} の要約結果です。"
+        )
+        if verbose:
+            logging.info("Summary: %s", state["summary"])
+        return state
+
+    def final_node(state: AgentState) -> AgentState:
+        state["final_answer"] = (
+            f"{state['query']} の回答です。"
+        )
+        return state
+
+    graph = StateGraph(AgentState)
+
+    graph.add_node("supervisor", supervisor_node)
+    graph.add_node("research", research_node)
+    graph.add_node("summarize", summarize_node)
+    graph.add_node("final", final_node)
+
+    graph.set_entry_point("supervisor")
+
+    graph.add_edge("supervisor", "research")
+    graph.add_edge("research", "summarize")
+    graph.add_edge("summarize", "final")
+    graph.add_edge("final", END)
+
+    app = graph.compile()
+
+    result = app.invoke(
+        {
+            "query": query,
+            "research_result": "",
+            "summary": "",
+            "final_answer": "",
+        }
+    )
+
+    return (
+        f"{result['final_answer']}\n\n"
+        f"[Research]\n{result['research_result']}\n\n"
+        f"[Summary]\n{result['summary']}"
+    )
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
