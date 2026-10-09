@@ -1,0 +1,39 @@
+# Python 3.10+ required
+
+# UI / API（全Day共通 — 共通画面・Runner API）
+streamlit>=1.31,<2
+fastapi>=0.110,<1
+uvicorn>=0.27,<1
+httpx>=0.27,<1
+
+# AWS（全Day共通）
+boto3>=1.34,<2
+
+# LangChain / LangGraph（全Day共通）
+# ※ バージョンは実動作確認済み（2026-05 時点）
+langchain>=1.0,<2
+langchain-aws>=1.0,<2
+langchain-community>=0.4,<1
+langgraph>=1.0,<2
+
+# LangGraph チェックポイント（Day04・Day07：メモリ永続化・HITL）
+langgraph-checkpoint-sqlite>=3.0,<5   # SqliteSaver 本体
+aiosqlite>=0.19,<1                     # SqliteSaver の非同期 SQLite バックエンド
+
+# Utilities
+python-dotenv>=1.0,<2
+pydantic>=2.0,<3
+
+# RAG（Day05）
+faiss-cpu>=1.7,<2           # ベクターストア（主）
+chromadb>=1.0,<2            # ベクターストア（faiss-cpu が入らない場合の代替、1.x 系 API を使用）
+rank-bm25>=0.2,<1           # BM25 キーワード検索（ハイブリッド検索用）
+pypdf>=4.0,<5               # PDF ドキュメントの読み込み
+sentence-transformers>=2.0,<4  # クロスエンコーダーリランキング
+                               # ※ 初回実行時にモデル（約400MB）をダウンロード
+
+# A2A（Day03）
+a2a-sdk>=1.0,<2
+
+# MCP（Day06）
+mcp>=1.0,<2

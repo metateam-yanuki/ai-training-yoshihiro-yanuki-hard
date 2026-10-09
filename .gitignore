@@ -1,0 +1,39 @@
+# Environment
+.env
+
+# Claude Code local settings
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Streamlit
+.streamlit/
+
+# Data (受講者が配置するファイル — .gitkeep だけ残す)
+day05/data/*
+!day05/data/.gitkeep
+
+# Test outputs (受講者が生成するファイル — .gitkeep だけ残す)
+day11/results/*
+!day11/results/.gitkeep
+day12/results/*
+!day12/results/.gitkeep
+
+# Database files
+*.db
+
+# FAISS index files
+*.faiss

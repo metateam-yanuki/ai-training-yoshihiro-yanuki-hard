@@ -1,0 +1,100 @@
+[
+  {
+    "id": "rag-normal-1",
+    "type": "rag",
+    "input": "LangGraph とはどのような技術ですか？",
+    "expected_keywords": ["グラフ", "状態", "ノード"],
+    "note": "RAG: 基本的な技術説明クエリ（Faithfulness・Relevance 両方計測対象）"
+  },
+  {
+    "id": "rag-normal-2",
+    "type": "rag",
+    "input": "RAG の仕組みを説明してください",
+    "expected_keywords": ["検索", "生成", "ベクター"],
+    "note": "RAG: 概念説明クエリ"
+  },
+  {
+    "id": "rag-normal-3",
+    "type": "rag",
+    "input": "LangChain のエージェントとは何ですか？",
+    "expected_keywords": ["エージェント", "ツール", "LLM"],
+    "note": "RAG: LangChain エージェント概念クエリ"
+  },
+  {
+    "id": "rag-normal-4",
+    "type": "rag",
+    "input": "ベクトル検索の利点を教えてください",
+    "expected_keywords": ["埋め込み", "意味", "類似"],
+    "note": "RAG: ベクトル検索の説明クエリ"
+  },
+  {
+    "id": "rag-normal-5",
+    "type": "rag",
+    "input": "AWS Bedrock で利用できる基盤モデルの種類を教えてください",
+    "expected_keywords": ["Claude", "Titan", "Bedrock"],
+    "note": "RAG: AWS Bedrock モデル一覧クエリ"
+  },
+  {
+    "id": "rag-hybrid-1",
+    "type": "rag",
+    "input": "ハイブリッド検索はどのように動作しますか？",
+    "expected_keywords": ["BM25", "ベクター", "ランキング"],
+    "note": "RAG: ハイブリッド検索（BM25 + Vector）のクエリ"
+  },
+  {
+    "id": "rag-faithfulness-check",
+    "type": "rag",
+    "input": "プロンプトエンジニアリングの主要なテクニックを3つ挙げてください",
+    "expected_keywords": ["Few-shot", "Chain-of-Thought", "プロンプト"],
+    "note": "RAG: Faithfulness 計測の焦点ケース（根拠なく創作しないか）"
+  },
+  {
+    "id": "rag-no-context",
+    "type": "rag",
+    "input": "今日の天気は？",
+    "expected_keywords": [],
+    "note": "RAG: コンテキスト外クエリ（「情報がありません」と回答すべき）"
+  },
+  {
+    "id": "rag-out-of-scope",
+    "type": "rag",
+    "input": "最近の株価を教えてください",
+    "expected_keywords": [],
+    "note": "RAG: 完全にスコープ外のクエリ（低 Faithfulness / 低 Relevance を期待）"
+  },
+  {
+    "id": "agent-task-1",
+    "type": "agent",
+    "input": "日本の首都を要約してください",
+    "expected_tools": ["summarize"],
+    "note": "Agent: 単一ツール呼び出しケース"
+  },
+  {
+    "id": "agent-task-2",
+    "type": "agent",
+    "input": "この文章を調査して要約してください: LangGraphはグラフベースのAIエージェントフレームワークです",
+    "expected_tools": ["research", "summarize"],
+    "note": "Agent: 複数ツール呼び出しケース（research → summarize）"
+  },
+  {
+    "id": "agent-task-3",
+    "type": "agent",
+    "input": "LangGraph の公式ドキュメントを調査して、主要な概念を3点にまとめてください",
+    "expected_tools": ["research", "summarize"],
+    "note": "Agent: 調査+要約の複合タスク"
+  },
+  {
+    "id": "agent-steps-check",
+    "type": "agent",
+    "input": "AIエージェントの設計パターンについて調べて報告してください",
+    "expected_tools": ["research"],
+    "note": "Agent: ステップ数計測の焦点ケース（何ノードを経由するか）"
+  },
+  {
+    "id": "agent-invalid",
+    "type": "agent",
+    "input": "",
+    "expected_error": true,
+    "note": "Agent: 空クエリの境界値テスト"
+  }
+]
