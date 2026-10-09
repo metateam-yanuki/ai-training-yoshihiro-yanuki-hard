@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse, logging, sys
-from typing import List
+from typing import List, TypedDict
+from langgraph.graph import END, StateGraph
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day02", description="LangGraph サブグラフ・ストリーミング")
@@ -15,20 +16,114 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--query must not be empty")
 
 def run_graph(query: str, stream: bool = False, region: str | None = None, model_id: str | None = None) -> str:
-    """Day01 のフローをサブグラフに分割し、ストリーミング対応したグラフを実行する。
+    class ResearchState(TypedDict):
+        research_input: str
+        research_output: str
 
-    実装ガイド:
-    1. Day01 の research / summarize を独立したサブグラフとして定義する
-       - 各サブグラフは独自の State を持ち、親グラフの State とは分離する
-       - サブグラフを add_node でネストする
-    2. stream=True のとき graph.stream() を使い、各 node/chunk を
-       logging.info で表示しながら最終 final_answer を収集して返す
-    3. stream=False のとき graph.invoke() を使う
+    class SummarizeState(TypedDict):
+        text_to_summarize: str
+        summary: str
 
-    戻り値:
-        最終回答テキスト
-    """
-    raise NotImplementedError("day02: run_graph() を実装してください")
+    class ParentState(TypedDict):
+        query: str
+        research_result: str
+        summary: str
+
+    # --------------------
+    # Research Subgraph
+    # --------------------
+    def research_node(state: ResearchState) -> ResearchState:
+        state["research_output"] = (
+            f"{state['research_input']} に関する調査結果です。"
+        )
+        return state
+
+    research_graph = StateGraph(ResearchState)
+    research_graph.add_node("research", research_node)
+    research_graph.set_entry_point("research")
+    research_graph.add_edge("research", END)
+
+    research_app = research_graph.compile()
+
+    # --------------------
+    # Summarize Subgraph
+    # --------------------
+    def summarize_node(state: SummarizeState) -> SummarizeState:
+        state["summary"] = (
+            f"{state['text_to_summarize']} の要約結果です。"
+        )
+        return state
+
+    summarize_graph = StateGraph(SummarizeState)
+    summarize_graph.add_node("summarize", summarize_node)
+    summarize_graph.set_entry_point("summarize")
+    summarize_graph.add_edge("summarize", END)
+
+    summarize_app = summarize_graph.compile()
+
+    # --------------------
+    # Parent Graph
+    # --------------------
+    def research_subgraph_node(state: ParentState) -> ParentState:
+        logging.info("research_subgraph: starting...")
+        result = research_app.invoke(
+            {
+                "research_input": state["query"],
+                "research_output": "",
+            }
+        )
+        state["research_result"] = result["research_output"]
+        logging.info("research_subgraph: done.")
+        return state
+
+    def summarize_subgraph_node(state: ParentState) -> ParentState:
+        logging.info("summarize_subgraph: starting...")
+        result = summarize_app.invoke(
+            {
+                "text_to_summarize": state["research_result"],
+                "summary": "",
+            }
+        )
+        state["summary"] = result["summary"]
+        logging.info("summarize_subgraph: done.")
+        return state
+
+    graph = StateGraph(ParentState)
+
+    graph.add_node("research_subgraph", research_subgraph_node)
+    graph.add_node("summarize_subgraph", summarize_subgraph_node)
+
+    graph.set_entry_point("research_subgraph")
+
+    graph.add_edge("research_subgraph", "summarize_subgraph")
+    graph.add_edge("summarize_subgraph", END)
+
+    app = graph.compile()
+
+    init_state = {
+        "query": query,
+        "research_result": "",
+        "summary": "",
+    }
+
+    if stream:
+        final_state = init_state
+
+        for chunk in app.stream(init_state):
+            logging.info("stream chunk=%s", chunk)
+            final_state.update(next(iter(chunk.values())))
+
+        return (
+            f"{final_state['summary']}\n\n"
+            f"[Research]\n{final_state['research_result']}"
+        )
+
+    result = app.invoke(init_state)
+
+    return (
+        f"{result['summary']}\n\n"
+        f"[Research]\n{result['research_result']}"
+    )
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
