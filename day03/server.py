@@ -1,6 +1,101 @@
 from __future__ import annotations
-import argparse, logging, sys
+
+import argparse
+import logging
+import sys
+
 from typing import List
+
+from a2a.helpers import new_text_message
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import (
+    create_agent_card_routes,
+    create_jsonrpc_routes,
+)
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import (
+    AgentCard,
+    AgentInterface,
+    Role,
+    Task,
+    TaskState,
+)
+
+from fastapi import FastAPI
+import uvicorn
+import boto3
+import json
+
+import boto3
+import json
+
+
+def summarize(text: str) -> str:
+
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name="ap-northeast-1",
+    )
+
+    prompt = f"""
+次の文章を簡潔に要約してください。
+
+{text}
+"""
+
+    response = client.invoke_model(
+        modelId="jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        body=json.dumps(
+            {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 300,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+            }
+        ),
+    )
+
+    body = response["body"].read()
+
+    result = json.loads(body)
+
+    return result["content"][0]["text"]
+
+
+class SummarizeExecutor(AgentExecutor):
+
+    async def execute(
+        self,
+        context,
+        event_queue,
+    ) -> None:
+
+        user_text = context.message.parts[0].text
+
+        summary = summarize(user_text)
+
+        msg = new_text_message(
+            summary,
+            role=Role.ROLE_AGENT,
+        )
+
+        await event_queue.enqueue_event(msg)
+
+
+
+
+    async def cancel(
+        self,
+        context,
+        event_queue,
+    ) -> None:
+        pass
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day03.server", description="A2A サーバー（要約エージェント）")
@@ -10,21 +105,63 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model-id", default=None)
     return p
 
-def serve(host: str = "127.0.0.1", port: int = 8100, region: str | None = None, model_id: str | None = None) -> None:
-    """Day01 の summarize Worker を A2A サーバーとして公開する。
+def serve(
+    host: str,
+    port: int,
+    region: str | None = None,
+    model_id: str | None = None,
+) -> None:
 
-    実装ガイド:
-    1. a2a-sdk の A2AServer を使ってサーバーを起動する
-    2. AgentCard に以下を記述する
-       - name: "summarize-agent"
-       - description: "テキストを要約するエージェント"
-       - capabilities: ["summarize"]
-    3. Task を受け取ったら Bedrock を使って要約し TaskState.completed で返す
-    4. サーバーが起動したら logging.info で URL を出力する
+    card = AgentCard()
 
-    ※ Ctrl-C で停止するまでブロックする
-    """
-    raise NotImplementedError("day03: serve() を実装してください")
+    card.name = "summarize-agent"
+    card.description = "テキストを要約するエージェント"
+
+    card.version = "1.0.0"
+
+    card.default_input_modes.append("text/plain")
+    card.default_output_modes.append("text/plain")
+
+    card.capabilities.streaming = True
+
+    interface = AgentInterface()
+    interface.url = f"http://{host}:{port}/"
+    interface.protocol_version = "1.0"
+    interface.protocol_binding = "JSONRPC"
+
+    card.supported_interfaces.append(interface)
+
+
+    executor = SummarizeExecutor()
+
+    task_store = InMemoryTaskStore()
+
+    handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=task_store,
+        agent_card=card,
+    )
+
+    app = FastAPI()
+
+    app.router.routes.extend(
+        create_agent_card_routes(card)
+    )
+
+    app.router.routes.extend(
+        create_jsonrpc_routes(
+            request_handler=handler,
+            rpc_url="/",
+        )
+    )
+
+    print(f"A2A server listening on http://{host}:{port}")
+
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+    )
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

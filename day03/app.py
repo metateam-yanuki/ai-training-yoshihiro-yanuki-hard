@@ -13,18 +13,54 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--task must not be empty")
 
 def call_agent(server_url: str, task: str) -> str:
-    """A2A サーバーにタスクを送信して結果を受け取る。
+    import asyncio
 
-    実装ガイド:
-    1. a2a-sdk の A2AClient を使ってサーバーに接続する
-    2. AgentCard を取得して capabilities を確認する
-    3. Task を送信して TaskState.completed になるまで待つ
-    4. 結果テキストを返す
+    from a2a.client import (
+        ClientConfig,
+        create_client,
+    )
+    from a2a.helpers import new_text_message
+    from a2a.types import (
+        GetExtendedAgentCardRequest,
+        Role,
+        SendMessageRequest,
+    )
 
-    戻り値:
-        エージェントからの応答テキスト
-    """
-    raise NotImplementedError("day03: call_agent() を実装してください")
+    async def _run():
+
+        config = ClientConfig()
+        config.supported_protocol_bindings.append(
+            "JSONRPC"
+        )
+
+        client = await create_client(
+            server_url,
+            client_config=config,
+        )
+
+        card_req = GetExtendedAgentCardRequest()
+
+        card = await client.get_extended_agent_card(
+            card_req
+        )
+
+        print(card)
+
+        msg = new_text_message(
+            task,
+            role=Role.ROLE_USER,
+        )
+
+        req = SendMessageRequest(
+            message=msg,
+        )
+
+        async for resp in client.send_message(req):
+            return str(resp)
+
+        return "No response"
+
+    return asyncio.run(_run())
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
