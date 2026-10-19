@@ -1,6 +1,18 @@
 from __future__ import annotations
 import argparse, logging, sys
 from typing import List
+from langchain_aws import ChatBedrock
+from langgraph.graph import (
+    MessagesState,
+    StateGraph,
+)
+from langgraph.checkpoint.memory import (
+    MemorySaver,
+)
+from langgraph.checkpoint.sqlite import (
+    SqliteSaver,
+)
+from langchain_core.messages import HumanMessage
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day04", description="メモリ設計（短期・長期・エピソード記憶）")
@@ -16,6 +28,21 @@ def _validate_args(args: argparse.Namespace) -> None:
     if not args.message.strip():
         raise ValueError("--message must not be empty")
 
+def call_model(state: MessagesState):
+
+    llm = ChatBedrock(
+        model_id="jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="ap-northeast-1",
+    )
+
+    response = llm.invoke(
+        state["messages"]
+    )
+
+    return {
+        "messages": [response]
+    }
+
 def run_chat(
     message: str,
     thread_id: str = "default",
@@ -23,21 +50,71 @@ def run_chat(
     region: str | None = None,
     model_id: str | None = None,
 ) -> str:
-    """指定されたメモリタイプで会話を継続する。
 
-    実装ガイド:
-    - memory_type="short" : LangGraph の MemorySaver でスレッド内のみ保持
-    - memory_type="long"  : SqliteSaver で SQLite (memory.db) に永続保存
-                            次回同じ thread_id で呼び出すと前の会話を参照できること
-    - memory_type="episode": long と同様に永続保存するが、
-                             会話が 10 ターン（= ユーザー発言 10 回）を超えたら
-                             それまでの履歴を LLM でサマリに圧縮してトークン数を削減する
-    - thread_id ごとに会話履歴を分離する
+    builder = StateGraph(MessagesState)
 
-    戻り値:
-        アシスタントの返答テキスト
-    """
-    raise NotImplementedError("day04: run_chat() を実装してください")
+    builder.add_node(
+        "model",
+        call_model,
+    )
+
+    builder.set_entry_point(
+        "model"
+    )
+
+    builder.set_finish_point(
+        "model"
+    )
+
+    if memory_type == "short":
+
+        memory = MemorySaver()
+
+        graph = builder.compile(
+            checkpointer=memory
+        )
+    elif memory_type in ("long", "episode"):
+        with SqliteSaver.from_conn_string(
+            "memory.db"
+        ) as memory:
+            graph = builder.compile(
+                checkpointer=memory
+            )
+
+            result = graph.invoke(
+                {
+                    "messages": [
+                        HumanMessage(content=message)
+                    ]
+                },
+                config={
+                    "configurable": {
+                    "thread_id": thread_id
+                }
+            },
+        )
+
+        return result["messages"][-1].content
+    else:
+        raise ValueError(
+            f"unknown memory_type: {memory_type}"
+        )
+
+
+    result = graph.invoke(
+        {
+            "messages": [
+                HumanMessage(content=message)
+            ]
+        },
+        config={
+            "configurable": {
+            "thread_id": thread_id
+            }
+        },
+    )
+
+    return result["messages"][-1].content
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
