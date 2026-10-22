@@ -58,13 +58,8 @@ def run_chat(
         call_model,
     )
 
-    builder.set_entry_point(
-        "model"
-    )
-
-    builder.set_finish_point(
-        "model"
-    )
+    builder.set_entry_point("model")
+    builder.set_finish_point("model")
 
     if memory_type == "short":
 
@@ -73,10 +68,28 @@ def run_chat(
         graph = builder.compile(
             checkpointer=memory
         )
+
+        result = graph.invoke(
+            {
+                "messages": [
+                    HumanMessage(content=message)
+                ]
+            },
+            config={
+                "configurable": {
+                    "thread_id": thread_id
+                }
+            },
+        )
+
+        return result["messages"][-1].content
+
     elif memory_type in ("long", "episode"):
+
         with SqliteSaver.from_conn_string(
             "memory.db"
         ) as memory:
+
             graph = builder.compile(
                 checkpointer=memory
             )
@@ -89,32 +102,55 @@ def run_chat(
                 },
                 config={
                     "configurable": {
-                    "thread_id": thread_id
-                }
-            },
-        )
+                        "thread_id": thread_id
+                    }
+                },
+            )
 
-        return result["messages"][-1].content
+            state = graph.get_state(
+                {
+                    "configurable": {
+                        "thread_id": thread_id
+                    }
+                }
+            )
+
+            messages = state.values["messages"]
+
+            print(f"memory_type={memory_type}")
+            print(f"message count={len(messages)}")
+
+            if memory_type == "episode":
+
+                print("EPISODE MODE")
+
+                if len(messages) > 10:
+
+                    print("EPISODE MEMORY TRIGGER")
+
+                    llm = ChatBedrock(
+                        model_id=model_id
+                        or "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                        region_name=region or "ap-northeast-1",
+                    )
+
+                    summary = llm.invoke(
+                        f"""
+以下の会話履歴を簡潔に要約してください。
+
+{messages}
+"""
+                    )
+
+                    print("SUMMARY")
+                    print(summary.content)
+
+            return result["messages"][-1].content
+
     else:
         raise ValueError(
             f"unknown memory_type: {memory_type}"
         )
-
-
-    result = graph.invoke(
-        {
-            "messages": [
-                HumanMessage(content=message)
-            ]
-        },
-        config={
-            "configurable": {
-            "thread_id": thread_id
-            }
-        },
-    )
-
-    return result["messages"][-1].content
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
