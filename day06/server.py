@@ -1,6 +1,12 @@
 from __future__ import annotations
 import argparse, logging, sys
 from typing import List
+from pathlib import Path
+import json
+
+from mcp.server.fastmcp import FastMCP
+
+from day05.app import answer_with_advanced_rag
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day06.server", description="MCP サーバー（RAG 検索ツールを公開）")
@@ -10,21 +16,51 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model-id", default=None)
     return p
 
-def serve(port: int = 8200, data_dir: str = "day05/data", region: str | None = None, model_id: str | None = None) -> None:
-    """Day05 の RAG 検索ロジックを MCP サーバーの Tool として公開する。
+def serve(
+    port: int = 8200,
+    data_dir: str = "day05/data",
+    region: str | None = None,
+    model_id: str | None = None,
+) -> None:
+    mcp = FastMCP("day06-rag-server")
 
-    実装ガイド:
-    1. mcp ライブラリの FastMCP または Server を使ってサーバーを起動する
-    2. Tools として以下を定義する
-       - search(query: str, top_k: int = 5) -> str
-         : Day05 の hybrid 検索を呼び出してフォーマット済み結果を返す
-    3. Resources として以下を定義する
-       - documents://list : data_dir 内のファイル一覧（名前・サイズ・更新日時）を JSON で返す
-    4. サーバーが起動したら logging.info で URL を出力する
+    @mcp.tool()
+    def search(query: str, top_k: int = 5) -> str:
+        return answer_with_advanced_rag(
+            query=query,
+            data_dir=data_dir,
+            top_k=top_k,
+            region=region,
+            model_id=model_id,
+        )
 
-    ※ Ctrl-C で停止するまでブロックする
-    """
-    raise NotImplementedError("day06: serve() を実装してください")
+    @mcp.resource("documents://list")
+    def documents_list() -> str:
+        docs = []
+
+        for p in Path(data_dir).glob("*"):
+            if p.is_file():
+                stat = p.stat()
+
+                docs.append(
+                    {
+                        "name": p.name,
+                        "size": stat.st_size,
+                        "updated_at": stat.st_mtime,
+                    }
+                )
+
+        return json.dumps(docs, ensure_ascii=False, indent=2)
+
+    logging.info(
+        "MCP server running at http://127.0.0.1:%d",
+        port,
+    )
+
+    mcp.run(
+        transport="streamable-http"
+    )
+
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

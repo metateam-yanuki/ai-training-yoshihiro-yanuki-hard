@@ -1,6 +1,11 @@
 from __future__ import annotations
 import argparse, logging, sys
 from typing import List
+from langchain_aws import ChatBedrock
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+import asyncio
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day06", description="MCP クライアント経由でエージェントを実行する")
@@ -14,19 +19,46 @@ def _validate_args(args: argparse.Namespace) -> None:
     if not args.query.strip():
         raise ValueError("--query must not be empty")
 
-def run_with_mcp(query: str, server_url: str, region: str | None = None, model_id: str | None = None) -> str:
-    """MCP サーバーが公開するツールを使ってエージェントが回答する。
+def run_with_mcp(
+    query: str,
+    server_url: str,
+    region: str | None = None,
+    model_id: str | None = None,
+) -> str:
 
-    実装ガイド:
-    1. mcp クライアントで server_url に接続し、利用可能な Tools 一覧を取得する
-    2. LangChain の MCP Tool として登録し、Day01 の Supervisor エージェントに渡す
-    3. エージェントが必要に応じて MCP サーバーの search ツールを呼び出して回答を生成する
-    4. MCP サーバーを差し替えてもエージェント側のコードは変わらない構成にする
+    async def _run():
+        client = MultiServerMCPClient(
+            {
+                "rag-server": {
+                    "url": server_url,
+                    "transport": "streamable_http",
+                }
+            }
+        )
 
-    戻り値:
-        エージェントの最終回答テキスト（根拠付き）
-    """
-    raise NotImplementedError("day06: run_with_mcp() を実装してください")
+        tools = await client.get_tools()
+
+        llm = ChatBedrock(
+            region_name=region,
+            model_id=model_id,
+        )
+
+        agent = create_react_agent(
+            llm,
+            tools,
+        )
+
+        result = await agent.ainvoke(
+            {
+                "messages": [
+                    ("user", query),
+                ]
+            }
+        )
+
+        return result["messages"][-1].content
+
+    return asyncio.run(_run())
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -48,8 +80,8 @@ def main(argv: List[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 1
     except Exception as e:
-        logging.error("unexpected error: %s", e)
-        print(str(e), file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         return 1
 
 if __name__ == "__main__":
