@@ -1,6 +1,42 @@
 from __future__ import annotations
 import argparse, logging, sys
 from typing import List
+from langchain_aws import ChatBedrock
+
+from langgraph.types import interrupt, Command
+from langgraph.checkpoint.sqlite import SqliteSaver
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    query: str
+    approved: str
+    result: str
+    region: str | None
+    model_id: str | None
+
+def approve_node(state: State) -> State:
+    answer = interrupt(
+        "このアクションを実行してよいですか？ [y/n]"
+    )
+
+    return {
+        "approved": answer
+    }
+
+
+def llm_node(state: State) -> State:
+    llm = ChatBedrock(
+        region_name=state["region"],
+        model_id=state["model_id"],
+    )
+
+    response = llm.invoke(state["query"])
+
+    return {
+        "result": response.content
+    }
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="day07", description="Human-in-the-Loop（承認フロー・中断・再開）")
@@ -22,20 +58,59 @@ def run_with_hitl(
     region: str | None = None,
     model_id: str | None = None,
 ) -> str:
-    """ツール実行前に人間の承認を求める LangGraph フローを実行する。
 
-    実装ガイド:
-    1. LangGraph の interrupt() を使い、ツール実行ノードの直前で一時停止する
-    2. 停止時に「このアクションを実行してよいか？[y/n]: 」と標準入力から確認を求める
-       auto_approve=True のときは自動で "y" とみなす（テスト・CI 用）
-    3. "n" の場合は代替ノードに分岐し「承認されなかったため処理を中止しました」を返す
-    4. SqliteSaver で thread_id ごとにチェックポイントを永続化する
-       （中断後に同じ thread_id で再実行すると続きから再開できること）
+    with SqliteSaver.from_conn_string("hitl.db") as checkpointer:
 
-    戻り値:
-        エージェントの最終回答、または中止メッセージ
-    """
-    raise NotImplementedError("day07: run_with_hitl() を実装してください")
+        builder = StateGraph(State)
+
+        builder.add_node("approve", approve_node)
+        builder.add_node("llm", llm_node)
+
+        builder.add_edge(START, "approve")
+        builder.add_edge("approve", "llm")
+        builder.add_edge("llm", END)
+
+        graph = builder.compile(
+            checkpointer=checkpointer
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        # 初回実行
+        result = graph.invoke(
+            {
+                "query": query,
+                "region": region,
+                "model_id": model_id,
+            },
+            config=config,
+        )
+
+        # interruptで止まった場合
+        if "__interrupt__" in result:
+
+            if auto_approve:
+                answer = "y"
+            else:
+                answer = input("このアクションを実行してよいですか？ [y/n]: ")
+
+            if answer.lower() != "y":
+                return "承認されなかったため処理を中止しました"
+
+            # checkpointから再開
+            result = graph.invoke(
+                Command(resume=answer),
+                config=config,
+            )
+
+        if isinstance(result, dict) and "result" in result:
+            return str(result["result"])
+
+        return str(result)
 
 def main(argv: List[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
